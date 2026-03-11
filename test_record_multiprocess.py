@@ -172,7 +172,7 @@ def process_frame_mp(frame):
 # 3. Main Parallel Analysis Orchestrator
 # =============================================================================
 
-def frame_generator(video_path, stride=2):
+def frame_generator(video_path, stride=4):
     """비디오 프레임을 제너레이터로 반환 (메모리 절약 및 즉시 처리)"""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -326,7 +326,7 @@ def analyze_parallel(video_path, whisper_service):
         
         # 전체 윈도우 수 대비 경고 비율
         total_windows = max(1, len(speeds) - window_size + 1)
-        final_result["pose_warning_ratio"] = round(warning_triggers / total_windows, 2)
+        final_result["pose_warning_ratio"] = float(round(warning_triggers / total_windows, 2))
     
     if gazes:
         horiz_counts = {"left":0, "center":0, "right":0}

@@ -1,4 +1,8 @@
 # app/main.py
+import multiprocessing
+
+multiprocessing.set_start_method("spawn", force=True)
+
 from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI

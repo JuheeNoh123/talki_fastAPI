@@ -14,7 +14,7 @@ import os
 
 router = APIRouter(prefix="/analyze", tags=["Analyze"])
 
-@router.post("/record")
+@router.post("/record-from-s3")
 async def analyze_record(
     # presentation_type: str = Query(
     #     PresentationType.ONLINE_SMALL,
@@ -45,7 +45,25 @@ async def analyze_record(
 
     return {"status": "processing"}
 
-   
+def download_video(url: str) -> str:
+    print("📥 영상 다운로드 시작")
+
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
+
+    # 임시 파일 생성
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+
+    # 큰 파일 대비 chunk 단위로 저장
+    for chunk in response.iter_content(chunk_size=1024 * 1024):
+        if chunk:
+            tmp.write(chunk)
+
+    tmp.close()
+
+    print("✅ 다운로드 완료:", tmp.name)
+
+    return tmp.name
 
 async def background_analysis(req):
 
@@ -70,13 +88,18 @@ async def background_analysis(req):
             )
 
             requests.post(
-                "http://localhost:8000/analyze/callback",
+                "http://43.201.182.246:8080/analyze/callback",
                 json={
                     "s3_key": req.s3_key,
                     "raw_result": raw_result,
                     "feedback": feedback
                 }
             )
+
+            
+            print("callback:",raw_result)
+            print("callback:",feedback)
+            print("callback:",req.s3_key)
 
         finally:
             import os
