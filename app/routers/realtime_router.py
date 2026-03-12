@@ -178,7 +178,10 @@ async def realtime_socket(ws: WebSocket):
             
             # 4. 말 속도(빠른,느린) 구간 감지
             if speech_result:
-                raw_result["speech"] = speech_result
+                if "speech" not in raw_result:
+                    raw_result["speech"] = {}
+
+                raw_result["speech"].update(speech_result)
 
                 wpm = speech_result.get("wpm", 0)
 
@@ -186,7 +189,7 @@ async def realtime_socket(ws: WebSocket):
                 if wpm > feedback_manager.criteria["wpm_max"]:
                     #fast 시작
                     if active_segments["speech_fast"] is None:
-                        active_segments["speech_fast"] = current_time
+                        active_segments["speech_fast"] = current_time - presentation_start_time
 
                 
                     #slow 종료
@@ -195,7 +198,7 @@ async def realtime_socket(ws: WebSocket):
                         save_segment(
                             presentation_id,
                             "speech_slow",
-                            active_segments["speech_slow"] - presentation_start_time,
+                            active_segments["speech_slow"],
                             current_time - presentation_start_time
                         )
 
@@ -207,7 +210,7 @@ async def realtime_socket(ws: WebSocket):
                 elif wpm < feedback_manager.criteria["wpm_min"] and wpm > 0:
                     #slow 시작
                     if active_segments["speech_slow"] is None:
-                        active_segments["speech_slow"] = current_time
+                        active_segments["speech_slow"] = current_time - presentation_start_time
                 
                 
                     #fast 종료
@@ -216,7 +219,7 @@ async def realtime_socket(ws: WebSocket):
                         save_segment(
                             presentation_id,
                             "speech_fast",
-                            active_segments["speech_fast"] - presentation_start_time,
+                            active_segments["speech_fast"],
                             current_time - presentation_start_time
                         )
 
