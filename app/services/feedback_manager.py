@@ -69,34 +69,6 @@ class FeedbackManager:
                 result["gaze_unstable"] = True
             else:
                 result["gaze_unstable"] = False
-            '''
-            # --- 수평 ---
-            # h_counts = {x: self.gaze_horiz_buffer.count(x) for x in set(self.gaze_horiz_buffer)}
-            # h_common = max(h_counts, key=h_counts.get)
-            # h_ratio = h_counts[h_common] / len(self.gaze_horiz_buffer)
-
-            # --- 수직 ---
-            # v_counts = {x: self.gaze_vert_buffer.count(x) for x in set(self.gaze_vert_buffer)}
-            # v_common = max(v_counts, key=v_counts.get)
-            # v_ratio = v_counts[v_common] / len(self.gaze_vert_buffer)
-
-            # 수평 피드백
-            # if h_ratio > 0.4:
-            #     if h_common == "left":
-            #         feedback_messages.append("시선이 계속 왼쪽을 향해 있습니다. 중앙을 봐주세요.")
-            #     elif h_common == "right":
-            #         feedback_messages.append("시선이 계속 오른쪽을 향해 있습니다. 중앙을 봐주세요.")
-            #     elif h_common == "N/A":
-            #         feedback_messages.append("얼굴이 잘 보이지 않습니다. 정면을 바라봐주세요.")
-
-            # 수직 피드백
-            # if v_ratio > 0.4:
-            #     if v_common == "up":
-            #         feedback_messages.append("시선이 위쪽으로 향해 있습니다. 청중을 바라봐주세요.")
-            #     elif v_common == "down":
-            #         feedback_messages.append("고개가 너무 숙여져 있습니다. 시선을 들어주세요.")
-            '''
-            
             
 
         # 2. 자세 업데이트 (움직임 속도)
@@ -121,13 +93,10 @@ class FeedbackManager:
                  feedback_messages.append("자세가 다소 경직되어 있습니다. 자연스러운 제스처를 사용해 보세요.")
                  self.last_pose_feedback_time = current_time
         
-        # 3. 음성 업데이트 (이동 평균 적용)
-        '''
-        짧은 순간 말을 빨리 해도, 평균적으로 괜찮다면 불필요한 경고가 줄어듦
-        또한 피드백이 발생하면 버퍼를 비워서 새로운 구간을 다시 측정
-        '''
-        speech = result.get("speech", {})
-        if speech.get("silence"):
+        # 3. 음성 업데이트
+        speech = result.get("speech")
+
+        if speech and speech.get("silence"):
             feedback_messages.append("발표 중 정적이 길어졌습니다. 이어서 말씀해 보세요.")
         if speech and speech.get("text"):
             wpm = speech.get("wpm", 0)
