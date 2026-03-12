@@ -66,6 +66,9 @@ class FeedbackManager:
                     "정면을 바라보는 시간이 부족합니다. 청중을 더 자주 바라봐주세요."
                 )
                 self.last_gaze_feedback_time = current_time
+                result["gaze_unstable"] = True
+            else:
+                result["gaze_unstable"] = False
             '''
             # --- 수평 ---
             # h_counts = {x: self.gaze_horiz_buffer.count(x) for x in set(self.gaze_horiz_buffer)}
