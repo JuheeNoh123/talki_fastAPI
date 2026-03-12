@@ -52,7 +52,9 @@ async def realtime_socket(ws: WebSocket):
     # 현재 진행 중인 "구간(segment)" 상태 저장 (값이 None이면 현재 구간 없음)
     active_segments = {
         "speech_fast": None,
+        "speech_slow": None, 
         "pose_rigid": None,
+        "pose_unstable": None, 
         "gaze_unstable": None,
         "silence": None
     }
@@ -99,7 +101,10 @@ async def realtime_socket(ws: WebSocket):
             current_time = time.time()
             data = await ws.receive_json() #프론트에서 JSON 데이터 수신
             
-            #1. 오디오 데이터 처리
+            #1. 랜드마크 기반 분석 (시선 + 자세)
+            raw_result = analyzer.analyze_realtime_landmarks(data)
+
+            #2. 오디오 데이터 처리
             audio_base64 = data.get("audio")
             if audio_base64:
                 audio_np = analyzer.decode_audio(audio_base64) # base64-> numpy 오디오 변환
@@ -108,12 +113,14 @@ async def realtime_socket(ws: WebSocket):
 
                 #정적 구간 감지
                 if volume < SILENCE_THRESHOLD:
-                    raw_result["speech"] = {
-                        "silence": True
-                    }
+                    
                     #정적 시작
                     if active_segments["silence"] is None:
                         active_segments["silence"] = current_time
+                    
+                    if "speech" not in raw_result:
+                        raw_result["speech"] = {}
+                    raw_result["speech"]["silence"] = True
                 else:
                     #정적 종료
                     if active_segments["silence"] is not None:
@@ -129,8 +136,7 @@ async def realtime_socket(ws: WebSocket):
                     #정적 상태 종료
                     active_segments["silence"] = None
 
-            #2. 랜드마크 기반 분석 (시선 + 자세)
-            raw_result = analyzer.analyze_realtime_landmarks(data)
+            
             
             #3. Whisper 음성 분석 실행
             speech_result = None
@@ -170,19 +176,41 @@ async def realtime_socket(ws: WebSocket):
                 # STT 실행 시각 업데이트
                 last_stt_time = current_time
             
-            # 4. 말 빠른 구간 감지
+            # 4. 말 속도(빠른,느린) 구간 감지
             if speech_result:
                 raw_result["speech"] = speech_result
 
                 wpm = speech_result.get("wpm", 0)
 
+                #말 빠른 구간
                 if wpm > feedback_manager.criteria["wpm_max"]:
-                    #말 빠른 구간 시작
+                    #fast 시작
                     if active_segments["speech_fast"] is None:
                         active_segments["speech_fast"] = current_time
 
-                else:
-                    #말 빠른 구간 종료
+                
+                    #slow 종료
+                    if active_segments["speech_slow"] is not None:
+
+                        save_segment(
+                            presentation_id,
+                            "speech_slow",
+                            active_segments["speech_slow"] - presentation_start_time,
+                            current_time - presentation_start_time
+                        )
+
+                        active_segments["speech_slow"] = None
+
+                    
+
+                #말 느린 구간
+                elif wpm < feedback_manager.criteria["wpm_min"] and wpm > 0:
+                    #slow 시작
+                    if active_segments["speech_slow"] is None:
+                        active_segments["speech_slow"] = current_time
+                
+                
+                    #fast 종료
                     if active_segments["speech_fast"] is not None:
 
                         save_segment(
@@ -193,17 +221,40 @@ async def realtime_socket(ws: WebSocket):
                         )
 
                         active_segments["speech_fast"] = None
+                
+                #정상 속도 구간
+                else:
+                    # fast 종료
+                    if active_segments["speech_fast"] is not None:
+                        save_segment(
+                            presentation_id,
+                            "speech_fast",
+                            active_segments["speech_fast"] - presentation_start_time,
+                            current_time - presentation_start_time
+                        )
+                        active_segments["speech_fast"] = None
+
+                    # slow 종료
+                    if active_segments["speech_slow"] is not None:
+                        save_segment(
+                            presentation_id,
+                            "speech_slow",
+                            active_segments["speech_slow"] - presentation_start_time,
+                            current_time - presentation_start_time
+                        )
+                        active_segments["speech_slow"] = None
+                    
 
             # 5. 시선 자세 피드백 업데이트            
             manager_feedback = feedback_manager.update(raw_result)
 
-            # 6. 자세 경직 구간 감지
+            # 6. 자세 경직,산만 구간 감지
             pose_landmarks = raw_result.get("pose_landmarks")
 
             if pose_landmarks:
 
                 avg_speed = np.mean(feedback_manager.movement_speeds) if feedback_manager.movement_speeds else 0
-
+                #자세 경직 구간
                 if avg_speed < feedback_manager.criteria["pose_min"]:
 
                     if active_segments["pose_rigid"] is None:
@@ -221,6 +272,25 @@ async def realtime_socket(ws: WebSocket):
                         )
 
                         active_segments["pose_rigid"] = None
+                
+                #자세 산만 구간
+                if avg_speed > feedback_manager.criteria["pose_max"]:
+
+                    if active_segments["pose_unstable"] is None:
+                        active_segments["pose_unstable"] = current_time
+
+                else:
+
+                    if active_segments["pose_unstable"] is not None:
+
+                        save_segment(
+                            presentation_id,
+                            "pose_unstable",
+                            active_segments["pose_unstable"] - presentation_start_time,
+                            current_time - presentation_start_time
+                        )
+
+                        active_segments["pose_unstable"] = None
            
            # 7. 시선 불안정 구간 감지
             if raw_result.get("gaze_unstable"):
