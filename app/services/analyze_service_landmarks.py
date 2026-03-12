@@ -1,5 +1,6 @@
 # app/services/analyze_service_landmarks.py
 from app.utils.analysis_utils import gaze_from_landmarks
+import base64, cv2, numpy as np, json
 
 def analyze_realtime_landmarks(data: dict):
     """

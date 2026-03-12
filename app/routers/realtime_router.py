@@ -232,7 +232,7 @@ async def realtime_socket(ws: WebSocket):
                         save_segment(
                             presentation_id,
                             "speech_fast",
-                            active_segments["speech_fast"] - presentation_start_time,
+                            active_segments["speech_fast"],
                             current_time - presentation_start_time
                         )
                         active_segments["speech_fast"] = None
@@ -242,7 +242,7 @@ async def realtime_socket(ws: WebSocket):
                         save_segment(
                             presentation_id,
                             "speech_slow",
-                            active_segments["speech_slow"] - presentation_start_time,
+                            active_segments["speech_slow"],
                             current_time - presentation_start_time
                         )
                         active_segments["speech_slow"] = None
@@ -341,4 +341,6 @@ async def realtime_socket(ws: WebSocket):
                     start_time - presentation_start_time,
                     now - presentation_start_time
                 )   
+        
         await ws.close()
+        
