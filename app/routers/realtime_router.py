@@ -323,6 +323,8 @@ async def realtime_socket(ws: WebSocket):
             }, ensure_ascii=False))
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"[WebSocket] 연결 종료: {e}")
 
     # 9. 발표 종료 시 열려있는 segment 정리
