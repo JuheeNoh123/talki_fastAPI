@@ -31,7 +31,7 @@ def whisper_worker(conn):
         
         import whisper
         # 모델 로드 (최초 1회 실행)
-        model = whisper.load_model("base", device=device)
+        model = whisper.load_model("small", device=device)
         init_elapsed = time.time() - init_start
         print(f"[Whisper Process] 모델 로드 완료 (소요시간: {init_elapsed:.2f}s). 대기 중...")
         
@@ -53,7 +53,13 @@ def whisper_worker(conn):
             
             try:
                 # Transcribe
-                result = model.transcribe(audio_path)
+                # initial_prompt: Whisper가 "어", "음" 등 필러를 suppression하지 않고
+                # 실제 전사하도록 유도. word_timestamps는 타임스탬프 확보용.
+                result = model.transcribe(
+                    audio_path,
+                    word_timestamps=True,
+                    initial_prompt="어, 음, 그, 저, 뭐, 아, 어어, 음음, 그래서, 근데, 어... 음... 그..."
+                )
                 
                 # 통계 계산
                 stats = speech_stats(result)
@@ -164,7 +170,18 @@ def process_frame_mp(frame):
         
     pose_points = None
     if p_res.pose_landmarks:
-        pose_points = {i: (lm.x, lm.y) for i, lm in enumerate(p_res.pose_landmarks.landmark)}
+        # visibility < 0.5인 랜드마크는 화면 밖 추정값 → 제외
+        # HAND_KEYS(손목/팔꿈치) 중 하나라도 visible해야 포함
+        VISIBILITY_THRESHOLD = 0.5
+        visible_points = {
+            i: (lm.x, lm.y)
+            for i, lm in enumerate(p_res.pose_landmarks.landmark)
+            if lm.visibility >= VISIBILITY_THRESHOLD
+        }
+        # HAND_KEYS 중 visible한 게 하나도 없으면 안 움직이는 것으로 처리
+        from app.utils.analysis_utils import HAND_KEYS as _HAND_KEYS
+        if any(k in visible_points for k in _HAND_KEYS):
+            pose_points = visible_points
         
     return gaze_data, pose_points
 
@@ -290,43 +307,62 @@ def analyze_parallel(video_path, whisper_service):
     # 6. 최종 결과 병합
     final_result = {
         "WPM": round(speech_data["wpm"], 1),
+        "fillers_count": int(speech_data.get("fillers_count", 0)),
+        "fillers_freq": round(float(speech_data.get("fillers_freq", 0.0)), 2),
+        "filler_detail": speech_data.get("filler_detail", {}),
+        "filler_list": speech_data.get("filler_list", []),
+        "silence_count": int(speech_data.get("silence_count", 0)),
+        "total_silence_sec": float(speech_data.get("total_silence_sec", 0.0)),
+        "silence_ratio": float(speech_data.get("silence_ratio", 0.0)),
         "handArmMovementAvg": float(np.mean(speeds)) if speeds else 0.0,
         "handArmMovementMaxRolling": 0.0,
-        "pose_warning_count": 0, # 실시간 로직 기준 경고 횟수
-        "pose_warning_ratio": 0.0, 
+        "pose_warning_count": 0,
+        "pose_warning_ratio": 0.0,
+        "pose_rigid_count": 0,
+        "pose_rigid_ratio": 0.0,
         "pose_samples": len(speeds),
-        "eyes": {}
+        "eyes": {},
+        "stt_text": speech_data.get("text", "")
     }
 
     if speeds:
-        # 실시간 피드백 로직 시뮬레이션
-        # FeedbackManager와 동일하게:
-        # - 30개 버퍼 (약 3초)
-        # - 버퍼 평균 속도 > 0.02 이면 경고 Trigger
-        
+        # --- Jitter 필터링 ---
+        # static_image_mode=True 사용 시 프레임 간 트래킹이 없어
+        # 실제로 안 움직여도 랜드마크 좌표가 튀는 현상(jitter) 발생.
+        # 1) Dead zone: JITTER_THRESHOLD 이하 속도는 실제 움직임이 아닌 jitter로 간주 → 0 처리
+        # 2) Median smoothing: 윈도우 5개 중앙값으로 스파이크 제거
+        from scipy.ndimage import median_filter
+        JITTER_THRESHOLD = 0.012  # 이 미만은 jitter로 간주
+        speeds_arr = np.array(speeds)
+        speeds_arr = np.where(speeds_arr < JITTER_THRESHOLD, 0.0, speeds_arr)
+        speeds_arr = median_filter(speeds_arr, size=5)
+        speeds = speeds_arr.tolist()
+
+        MOVEMENT_WARNING_THRESHOLD = 0.025
         warning_triggers = 0
         window_size = 30
-        
-        # Convolve를 사용하여 모든 윈도우의 평균을 한 번에 계산
+
         if len(speeds) >= window_size:
             rolling_avgs = np.convolve(speeds, np.ones(window_size)/window_size, mode='valid')
             max_rolling = float(np.max(rolling_avgs))
-            
-            # 경고 기준(0.02)을 초과한 윈도우(순간)의 개수
-            warning_triggers = np.sum(rolling_avgs > 0.02)
+            warning_triggers = np.sum(rolling_avgs > MOVEMENT_WARNING_THRESHOLD)
         else:
-            # 30프레임 미만이면 전체 평균으로 1회 판단
             avg_all = np.mean(speeds)
-            if avg_all > 0.02:
+            if avg_all > MOVEMENT_WARNING_THRESHOLD:
                 warning_triggers = 1
             max_rolling = float(avg_all)
-            
+
+        final_result["handArmMovementAvg"] = float(np.mean(speeds))
         final_result["handArmMovementMaxRolling"] = max_rolling
         final_result["pose_warning_count"] = int(warning_triggers)
-        
-        # 전체 윈도우 수 대비 경고 비율
+
         total_windows = max(1, len(speeds) - window_size + 1)
         final_result["pose_warning_ratio"] = float(round(warning_triggers / total_windows, 2))
+
+        # 경직도: jitter 필터링 후에도 0인 프레임 비율
+        rigid_frames = sum(1 for s in speeds if s < JITTER_THRESHOLD)
+        final_result["pose_rigid_count"] = int(rigid_frames)
+        final_result["pose_rigid_ratio"] = float(round(rigid_frames / len(speeds), 2))
     
     if gazes:
         horiz_counts = {"left":0, "center":0, "right":0}
