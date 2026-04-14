@@ -2,6 +2,8 @@
 from fastapi import APIRouter, WebSocket
 from app.services import analyze_service_landmarks as analyzer
 from app.services.feedback_manager import FeedbackManager
+from starlette.websockets import WebSocketDisconnect
+
 
 #기본 라이브러리
 import base64, cv2, numpy as np, json
@@ -322,6 +324,10 @@ async def realtime_socket(ws: WebSocket):
                 "data": manager_feedback
             }, ensure_ascii=False))
 
+
+    except WebSocketDisconnect:
+        print("클라이언트 나감")
+        
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -342,5 +348,6 @@ async def realtime_socket(ws: WebSocket):
                     now - presentation_start_time
                 )   
         
-        await ws.close()
+        if ws.client_state.name != 'DISCONNECTED':
+            await ws.close()
         
