@@ -8,6 +8,7 @@ from starlette.websockets import WebSocketDisconnect
 #기본 라이브러리
 import base64, cv2, numpy as np, json
 import time, uuid
+from datetime import datetime, timezone
 
 #레디스 (실시간 분석 결과 저장용)
 from app.core.redis import redis_client
@@ -27,11 +28,12 @@ import os
 #레디스에 구간(segment) 정보 저장하는 함수
 def save_segment(presentation_id, seg_type, start, end):
     #저장할 데이터 종류
-    event = { 
+    event = {
         "type": seg_type, # 구간 종류 (speech_fast / silence / pose_rigid / gaze_unstable)
         "start": round(start, 1), # 발표 시작 기준 시작 시간
         "end": round(end, 1), #발표 시작 기준 종료 시간
-        "duration": round(end - start, 1) # 구간 길이
+        "duration": round(end - start, 1), # 구간 길이
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z" # 저장 시각 (UTC ISO 8601)
     }
 
     # Redis 리스트에 push
@@ -296,8 +298,8 @@ async def realtime_socket(ws: WebSocket):
                         )
 
                         active_segments["pose_unstable"] = None
-           
-           # 7. 시선 불안정 구간 감지
+
+            # 7. 시선 불안정 구간 감지
             if raw_result.get("gaze_unstable"):
 
                 if active_segments["gaze_unstable"] is None:
@@ -336,16 +338,24 @@ async def realtime_socket(ws: WebSocket):
     # 9. 발표 종료 시 열려있는 segment 정리
     finally:
         now = time.time()
+        elapsed_now = now - presentation_start_time
+
+        # speech_fast/slow는 이미 경과 시간으로 저장, 나머지는 절대 시간으로 저장
+        already_elapsed = {"speech_fast", "speech_slow"}
 
         for seg_type, start_time in active_segments.items():
 
             if start_time is not None:
+                if seg_type in already_elapsed:
+                    start_elapsed = start_time
+                else:
+                    start_elapsed = start_time - presentation_start_time
 
                 save_segment(
                     presentation_id,
                     seg_type,
-                    start_time - presentation_start_time,
-                    now - presentation_start_time
+                    start_elapsed,
+                    elapsed_now
                 )   
         
         if ws.client_state.name != 'DISCONNECTED':
