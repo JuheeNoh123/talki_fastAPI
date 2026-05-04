@@ -14,7 +14,10 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.append("C:/Users/user/Desktop/talki_ML/Topic_model_Talki")
+TOPIC_MODEL_DIR = os.getenv("TOPIC_MODEL_DIR", "/app/Topic_model")
+sys.path.append(TOPIC_MODEL_DIR)
+
+SPRING_URL = os.getenv("SPRING_URL")
 
 from service_scorer import ServiceScorer
 
@@ -156,7 +159,7 @@ async def background_analysis(req):
             }
 
             requests.post(
-                "http://43.201.182.246:8080/analyze/callback",
+                f"{SPRING_URL}/analyze/callback",
                 json=resjson
             )
 
