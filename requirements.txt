@@ -27,6 +27,7 @@ numpy>=1.24.0
 anthropic>=0.25.0
 
 # ===== Audio / Speech (TALKI 용) =====
+openai-whisper #추가해도 되는지 알아보기 - 민서
 soundfile
 librosa
 
