@@ -75,12 +75,14 @@ def _ensure_ffmpeg_for_pydub():
     AudioSegment.ffprobe = ffprobe_path
 
 def extract_audio(video_path):
-    """영상 파일에서 오디오를 추출하여 wav 파일로 저장합니다."""
+    """영상 파일에서 오디오를 추출하여 임시 wav 파일로 저장합니다."""
+    import tempfile
     _ensure_ffmpeg_for_pydub()
     audio = AudioSegment.from_file(video_path, format="mp4")
-    audio_path = "temp_audio.wav"
-    audio.export(audio_path, format="wav")
-    return audio_path
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+    tmp.close()
+    audio.export(tmp.name, format="wav")
+    return tmp.name
 
 def whisper_transcribe(audio_path):
     """Whisper 모델을 사용하여 오디오를 텍스트로 변환합니다."""

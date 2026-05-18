@@ -268,6 +268,10 @@ def analyze_parallel(video_path, whisper_service):
     if audio_path:
         print("[Main] Whisper 결과 대기 중...")
         whisper_res = whisper_service.get_result()
+        try:
+            os.remove(audio_path)
+        except Exception:
+            pass
     else:
         whisper_res = {"status": "error", "message": "Audio extraction failed"}
 
@@ -293,16 +297,6 @@ def analyze_parallel(video_path, whisper_service):
     union_duration = union_end - union_start
     
     overlap_ratio = (overlap_duration / union_duration * 100) if union_duration > 0 else 0
-    
-    # [추가] 텍스트 스크립트 파일로 저장
-    try:
-        # 확장자 제거 후 _script.txt 붙이기
-        script_path = os.path.splitext(video_path)[0] + "_script.txt"
-        with open(script_path, "w", encoding="utf-8") as f:
-            f.write(speech_data.get("text", ""))
-        print(f"[Main] 스크립트 저장 완료: {script_path}")
-    except Exception as e:
-        print(f"[Main] 스크립트 저장 실패: {e}")
     
     # 6. 최종 결과 병합
     final_result = {
