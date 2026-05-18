@@ -13,13 +13,19 @@ import os, sys, time, threading
 import psutil, torch
 from pathlib import Path
 
-try:
-    import pynvml
-    pynvml.nvmlInit()
-    _nvml_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-    HAS_NVML = True
-except Exception:
-    HAS_NVML = False
+import subprocess
+
+def _gpu_util():
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+            stderr=subprocess.DEVNULL
+        )
+        return int(out.decode().strip())
+    except Exception:
+        return None
+
+HAS_NVML = _gpu_util() is not None
 
 BASE_DIR   = Path(__file__).resolve().parent
 TOPIC_PATH = BASE_DIR / "Topic_model" / "topic_model_mnr"
@@ -50,8 +56,9 @@ class Monitor:
             if HAS_CUDA:
                 self.vram.append(torch.cuda.memory_allocated() / 1024 / 1024)
             if HAS_NVML:
-                util = pynvml.nvmlDeviceGetUtilizationRates(_nvml_handle)
-                self.gpu_util.append(util.gpu)
+                v = _gpu_util()
+                if v is not None:
+                    self.gpu_util.append(v)
             time.sleep(self.interval)
 
     def start(self):
