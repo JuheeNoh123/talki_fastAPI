@@ -57,6 +57,8 @@ def whisper_worker(conn):
                 # 실제 전사하도록 유도. word_timestamps는 타임스탬프 확보용.
                 result = model.transcribe(
                     audio_path,
+                    # 보다 확실한 평가를 위해 추가했는데 이후 확인받기 - 민서
+                    language="ko",
                     word_timestamps=True,
                     initial_prompt="어, 음, 그, 저, 뭐, 아, 어어, 음음, 그래서, 근데, 어... 음... 그..."
                 )
